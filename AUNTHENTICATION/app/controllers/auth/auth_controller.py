@@ -1,15 +1,19 @@
 from flask import Blueprint, request, jsonify
-from app.status_code import HTTP_400_BAD_REQUEST,HTTP_409_CONFLICT,HTTP_500_INTERNAL_SERVER_ERROR, HTTP_200_OK, HTTP_401_UNAUTHORIZED, HTTP_201_CREATED
+from app.status_code import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT, HTTP_500_INTERNAL_SERVER_ERROR, HTTP_200_OK, HTTP_401_UNAUTHORIZED, HTTP_201_CREATED
 import validators
 from app.models.author_model import Author
 from app.extensions import db, bcrypt
-from flask_jwt_extended import create_access_token, jwt_required,get_jwt_identity, create_refresh_token
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 
+#registering blueprints
 
 auth = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
+# 'auth' is the Blueprint name.
+# __name__ refers to the module where this Blueprint is located.
+# url_prefix='/api/v1/auth' means all routes in this Blueprint will be prefixed with /api/v1/auth
 
-# 1. user registration
 
+# 1. User Registration
 @auth.route('/register', methods=['POST'])
 def register_user():
     data = request.json
@@ -19,112 +23,102 @@ def register_user():
     email = data.get('email')
     password = data.get('password')
     biography = data.get('biography')
+    user_type = data.get('user_type')
 
+    # Validations
+    if not first_name or not last_name or not contact or not password or not email:
+        return jsonify({"error": "All fields are required"}), HTTP_400_BAD_REQUEST
 
-    #validations of the incoming request
+    if user_type == 'author' and not biography:
+        return jsonify({"error": "Enter your author biography"}), HTTP_400_BAD_REQUEST
 
-    if not first_name or not last_name or not contact or  not password or not email: #ensuring that not empty values are submitted
-        return jsonify({"error":"All fields are required"}),HTTP_400_BAD_REQUEST
-    
-    if type  == 'author' and not biography:
-        return jsonify({"error":"Enter your author biography"}),HTTP_400_BAD_REQUEST
-
-    
     if len(password) < 8:
-        return jsonify({"error":"Password is too short"}),HTTP_400_BAD_REQUEST #to ensure that the password is above 8 
-    
+        return jsonify({"error": "Password is too short"}), HTTP_400_BAD_REQUEST
+
     if not validators.email(email):
-        return jsonify({"error":"Email is not valid"}),HTTP_400_BAD_REQUEST #to ensure that the email is valid
-    
-    if Author.query.filter_by(email=email).first() is not None:
-        return jsonify({"error":"Email address already  in use"}),HTTP_409_CONFLICT  #to reject the already existig email
-    
-    if Author.query.filter_by(contact=contact).first() is not None:
-        return jsonify({"error":"Contact already in use"}),HTTP_409_CONFLICT
-    # 3 hashing passwords
+        return jsonify({"error": "Email is not valid"}), HTTP_400_BAD_REQUEST
+
+    if Author.query.filter_by(email=email).first():
+        return jsonify({"error": "Email address already in use"}), HTTP_409_CONFLICT
+
+    if Author.query.filter_by(contact=contact).first():
+        return jsonify({"error": "Contact already in use"}), HTTP_409_CONFLICT
+
     try:
-       hashed_password = bcrypt.generate_password_hash(password) #hashing the password
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')  # Convert bytes to string
 
-       #creating a new author
-       new_author = Author(
-                       first_name=first_name,
-                       last_name=last_name,
-                       password=hashed_password,
-                       email=email,
-                       contact=contact,
-                       biography=biography,
-                       user_type=type
-                       )
-       db.session.add(new_author)  #to add the new instance 
-       db.session.commit()
+        # Create a new author
+        new_author = Author(
+            first_name=first_name,
+            last_name=last_name,
+            password=hashed_password,
+            email=email,
+            contact=contact,
+            biography=biography,
+            user_type=user_type
+        )
 
-       #username
-       username = new_author.get_full_name()
+        db.session.add(new_author)
+        db.session.commit()
 
-       return jsonify({
-           'message':username + " has been successfully created as an " + new_author,
-           'user':{
-               'id':new_author.id,
-               "first_name":new_author.first_name,
-               "last_name":new_author.last_name,
-               "email": new_author.email,
-               "contact": new_author.contact,
-               'biography':new_author.biography,
-              'created_at':new_author.created_at,
-           }
-       }),HTTP_201_CREATED
+        username = new_author.get_full_name()
 
-    except Exception as e:   
-        db.session.rollback() 
-        return jsonify({'error':str(e)}),HTTP_500_INTERNAL_SERVER_ERROR
-    
-    #author login
+        return jsonify({
+            'message': f"{username} has been successfully created as an {new_author.user_type}",
+            'user': {
+                'id': new_author.id,
+                "first_name": new_author.first_name,
+                "last_name": new_author.last_name,
+                "email": new_author.email,
+                "contact": new_author.contact,
+                'biography': new_author.biography,
+                'created_at': new_author.created_at,
+            }
+        }), HTTP_201_CREATED
 
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), HTTP_500_INTERNAL_SERVER_ERROR
+
+# 2. User Login
 @auth.post('/login')
 def login():
     email = request.json.get('email')
     password = request.json.get('password')
-    
+
     try:
-       if not password or not email:
-        return jsonify({'Message': "Email and Password are required."}), HTTP_400_BAD_REQUEST
-    
-    
-       user = Author.query.filter_by(email=email).first()
-       if user:
+        if not password or not email:
+            return jsonify({'Message': "Email and Password are required."}), HTTP_400_BAD_REQUEST
+
+        user = Author.query.filter_by(email=email).first()
+        if user:
             is_correct_password = bcrypt.check_password_hash(user.password, password)
             if is_correct_password:
-                   access_token = create_access_token(identity=user.id)
-                   refresh_token = create_refresh_token(identity= user.id) 
-                   return jsonify({
-                'user':{
-                    'id': user.id,
-                    'username': user.get_full_name(),
-                    'email': user.email,
-                    'access_token': access_token,
-                    'refresh_token': refresh_token, 
-                    'type': user.user_type
+                access_token = create_access_token(identity=user.id)
+                refresh_token = create_refresh_token(identity=user.id)
 
-                     },
-                     'message': "You have successfully logged into your account."
-                  }), HTTP_200_OK
-            
-            else: 
-                return jsonify({'Message': "Invalid password."}), HTTP_401_UNAUTHORIZED
-           
+                return jsonify({
+                    'user': {
+                        'id': user.id,
+                        'username': user.get_full_name(),
+                        'email': user.email,
+                        'access_token': access_token,
+                        'refresh_token': refresh_token,
+                        'type': user.user_type
+                    },
+                    'message': "You have successfully logged into your account."
+                }), HTTP_200_OK
 
-       else:
-         return jsonify({'Message': "Invalid email address."}), HTTP_401_UNAUTHORIZED
+            return jsonify({'Message': "Invalid password."}), HTTP_401_UNAUTHORIZED
+
+        return jsonify({'Message': "Invalid email address."}), HTTP_401_UNAUTHORIZED
 
     except Exception as e:
-        return jsonify({
-            'error': str(e)
-            }), HTTP_500_INTERNAL_SERVER_ERROR
+        return jsonify({'error': str(e)}), HTTP_500_INTERNAL_SERVER_ERROR
 
-#refresh token
-    
-@auth.route("token/refresh", methods=["POST"])
-@jwt_required(refresh=True) 
+# 3. Refresh Token
+@auth.route("/token/refresh", methods=["POST"])
+@jwt_required(refresh=True)
 def refresh():
     identity = get_jwt_identity()
     access_token = create_access_token(identity=identity)

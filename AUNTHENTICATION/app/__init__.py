@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from app.extensions import db, migrate,jwt
+from app.controllers.auth.auth_controller import auth
 
 def create_app():  #application factory function
     
@@ -24,3 +25,11 @@ def create_app():  #application factory function
     def index():
         return "World"
     return app
+
+
+    #Registering blueprints
+    app.register_blueprint(auth)
+
+    @app.route("/")
+    def home():
+        return "Authors API Project setup"
