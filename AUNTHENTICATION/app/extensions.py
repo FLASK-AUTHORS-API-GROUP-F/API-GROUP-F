@@ -6,5 +6,5 @@ from flask_jwt_extended import JWTManager
 
 db = SQLAlchemy()
 migrate = Migrate()
-Bcrypt = Bcrypt()
+bcrypt = Bcrypt()
 jwt = JWTManager()

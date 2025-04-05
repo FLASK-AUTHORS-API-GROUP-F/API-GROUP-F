@@ -1,28 +1,30 @@
 from flask import Blueprint, request, jsonify
 from app.status_code import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT, HTTP_500_INTERNAL_SERVER_ERROR, HTTP_200_OK, HTTP_401_UNAUTHORIZED, HTTP_201_CREATED
 import validators
-from app.models.author_model import Author
+
+from app.models.user import User
 from app.extensions import db, bcrypt
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 
 #registering blueprints
 
 auth = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
-# 'auth' is the Blueprint name.
+# 'auth' is the Blueprint name groups the blueprint.
 # __name__ refers to the module where this Blueprint is located.
 # url_prefix='/api/v1/auth' means all routes in this Blueprint will be prefixed with /api/v1/auth
 
 
 # 1. User Registration
-@auth.route('/register', methods=['POST'])
+@auth.route('/register', methods=['POST']) #POST is the HTTP method
 def register_user():
     data = request.json
+
     first_name = data.get('first_name')
     last_name = data.get('last_name')
     contact = data.get('contact')
     email = data.get('email')
     password = data.get('password')
-    biography = data.get('biography')
+    biography = data.get('biography','')if type == "author" else ''
     user_type = data.get('user_type')
 
     # Validations
@@ -38,17 +40,23 @@ def register_user():
     if not validators.email(email):
         return jsonify({"error": "Email is not valid"}), HTTP_400_BAD_REQUEST
 
-    if Author.query.filter_by(email=email).first():
+    # if User.query.filter_by(email=email).first():
+    #     return jsonify({"error": "Email address already in use"}), HTTP_409_CONFLICT
+
+    # if User.query.filter_by(contact=contact).first():
+    #     return jsonify({"error": "Contact already in use"}), HTTP_409_CONFLICT
+   
+    if User.query.filter_by(email=email) is not None:
         return jsonify({"error": "Email address already in use"}), HTTP_409_CONFLICT
-
-    if Author.query.filter_by(contact=contact).first():
-        return jsonify({"error": "Contact already in use"}), HTTP_409_CONFLICT
-
+    
+    if User.query.filter_by(contact=contact)is not None:
+         return jsonify({"error": "Contact already in use"}), HTTP_409_CONFLICT
+    
     try:
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')  # Convert bytes to string
-
-        # Create a new author
-        new_author = Author(
+        hashed_password = bcrypt.generate_password_hash(password) #.decode('utf-8')  # Convert bytes to string
+        
+        # Create a new user
+        new_user = User(
             first_name=first_name,
             last_name=last_name,
             password=hashed_password,
@@ -58,21 +66,21 @@ def register_user():
             user_type=user_type
         )
 
-        db.session.add(new_author)
+        db.session.add(new_user)
         db.session.commit()
 
-        username = new_author.get_full_name()
+        username = new_user.get_full_name()
 
         return jsonify({
-            'message': f"{username} has been successfully created as an {new_author.user_type}",
+            'message': f"{username} has been successfully created as an {new_user.user_type}",
             'user': {
-                'id': new_author.id,
-                "first_name": new_author.first_name,
-                "last_name": new_author.last_name,
-                "email": new_author.email,
-                "contact": new_author.contact,
-                'biography': new_author.biography,
-                'created_at': new_author.created_at,
+                'id': new_user.id,
+                "first_name": new_user.first_name,
+                "last_name": new_user.last_name,
+                "email": new_user.email,
+                "contact": new_user.contact,
+                'biography': new_user.biography,
+                'created_at': new_user.created_at,
             }
         }), HTTP_201_CREATED
 
@@ -90,7 +98,7 @@ def login():
         if not password or not email:
             return jsonify({'Message': "Email and Password are required."}), HTTP_400_BAD_REQUEST
 
-        user = Author.query.filter_by(email=email).first()
+        user = User.query.filter_by(email=email).first()
         if user:
             is_correct_password = bcrypt.check_password_hash(user.password, password)
             if is_correct_password:
